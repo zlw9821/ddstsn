@@ -1,0 +1,29 @@
+# ==========================================================
+# Fast DDS integration for OMNeT++ (macOS/Linux)
+# ==========================================================
+
+# 1. 定义 Fast DDS 安装根目录
+# 请根据你的实际安装路径修改此处（例如 /usr/local 或 /opt/fastdds）
+FASTDDS_HOME = /opt/fastdds
+
+# 2. 头文件包含路径
+# 使用 INCLUDES 或 INCLUDE_PATH（取决于 OMNeT++ 版本，建议同时加上以防万一）
+INCLUDES += -I$(FASTDDS_HOME)/include
+INCLUDE_PATH += -I$(FASTDDS_HOME)/include
+
+# 3. 库文件搜索路径
+# 告诉链接器去哪里找 .dylib 或 .so 文件
+LIBS += -L$(FASTDDS_HOME)/lib
+
+# 4. 链接具体的库
+# 注意顺序：通常 fastdds 依赖 fastcdr 和 foonathan_memory
+LIBS += -lfastdds -lfastcdr -lfoonathan_memory
+
+# 5. 运行时路径 (RPATH) - 关键步骤
+# 解决 "library not loaded" 运行时错误。
+# 在 macOS 上，链接器需要知道动态库在运行时的绝对位置。
+LDFLAGS += -Wl,-rpath,$(FASTDDS_HOME)/lib
+
+# 6. 如果你在 macOS 上使用 Intel/Apple Silicon 混合环境，
+# 有时需要显式指定架构，但通常 OMNeT++ 会自动处理。
+# LDFLAGS += -arch arm64
