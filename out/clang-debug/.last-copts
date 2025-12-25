@@ -1,1 +1,0 @@
--O0 -Wall -glldb -fstandalone-debug   -MMD -MP -MF .d -isystem /opt/homebrew/include   -DGL_SILENCE_DEPRECATION -Wno-deprecated-register -Wno-unused-function -fno-omit-frame-pointer  -DOMNETPPLIBS_IMPORT -DINET_IMPORT -I. -I../inet/src -I/Users/qiuyeyijian/burong/omnetpp/include

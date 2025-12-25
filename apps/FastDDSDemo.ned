@@ -1,4 +1,5 @@
 
+package apps;
 
 simple DdsPublisherModule
 {
