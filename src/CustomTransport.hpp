@@ -1,136 +1,161 @@
+// CustomTransport.hpp
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <cstring>
 #include <fastdds/rtps/common/Locator.hpp>
 #include <fastdds/rtps/transport/TransportInterface.hpp>
 #include <fastdds/rtps/transport/TransportReceiverInterface.hpp>
+#include <functional>
 #include <mutex>
 #include <queue>
-#include <thread>
 #include <vector>
 
-// 传输原始包（Fast-DDS <-> OMNeT++ Bridge 之间）
+// 传输原始包结构
 struct RawPacket {
   std::vector<uint8_t> data;
   eprosima::fastdds::rtps::Locator_t local;
   eprosima::fastdds::rtps::Locator_t remote;
 
   RawPacket() {
-    // 初始化 locators
     std::memset(&local, 0, sizeof(local));
     std::memset(&remote, 0, sizeof(remote));
   }
 };
 
-// forward declare descriptor
 class CustomTransportDescriptor;
 
 class CustomTransport : public eprosima::fastdds::rtps::TransportInterface {
  public:
-  // Construct from our descriptor
   explicit CustomTransport(const CustomTransportDescriptor& descriptor);
   ~CustomTransport() override;
 
-  // Transport lifecycle
-  bool init(const eprosima::fastdds::rtps::PropertyPolicy* properties = nullptr,
-            const uint32_t& max_msg_size_no_frag = 0) override;
-  void shutdown() override;
+  bool init(const eprosima::fastdds::rtps::PropertyPolicy* = nullptr,
+            const uint32_t& = 0) override {
+    return true;
+  }
+  void shutdown() override {}
 
-  // Helper used by the bridge to enqueue outgoing packets (not a
-  // TransportInterface method)
-  bool send(eprosima::fastdds::rtps::Locator_t* locators, const uint8_t* buffer,
-            uint32_t size, eprosima::fastdds::rtps::Locator_t* remote_locator);
+  // DDS -> Transport: DDS 想要发送数据
+  bool send(
+      eprosima::fastdds::rtps::Locator_t* locators, const uint8_t* buffer,
+      uint32_t size,
+      eprosima::fastdds::rtps::Locator_t* remote_locator);  // 注意 override
 
-  // Optional helper to set the receiver directly (also done via
-  // OpenInputChannel)
-  void set_receive_callback(
-      eprosima::fastdds::rtps::TransportReceiverInterface* receiver);
-
-  // Bridge -> Transport（收到 INET UDP 后调用）
+  // App -> Transport: 网络收到数据，推入 DDS
+  // 注意：在仿真中，我们直接同步回调 receiver，不需要中间队列
   void push_incoming(RawPacket&& pkt);
 
-  // Bridge 轮询 outgoing
+  // App -> Transport: 轮询 DDS 是否有要发出的数据
   bool pop_outgoing(RawPacket& pkt);
 
-  // TransportInterface required overrides
+  // Set a lightweight callback to notify upper layers when outgoing data
+  // is available. Callback must be thread-safe and must not call OMNeT++ APIs.
+  void set_on_send_callback(std::function<void()> cb) {
+    on_send_callback_ = cb;
+  }
+
+  // TransportInterface 必须实现的接口
   bool IsInputChannelOpen(
-      const eprosima::fastdds::rtps::Locator&) const override;
+      const eprosima::fastdds::rtps::Locator&) const override {
+    return true;
+  }
   bool IsLocatorSupported(
-      const eprosima::fastdds::rtps::Locator&) const override;
+      const eprosima::fastdds::rtps::Locator&) const override {
+    return true;
+  }
   bool is_locator_allowed(
-      const eprosima::fastdds::rtps::Locator&) const override;
+      const eprosima::fastdds::rtps::Locator&) const override {
+    return true;
+  }
   bool is_locator_reachable(
-      const eprosima::fastdds::rtps::Locator_t& locator) override;
+      const eprosima::fastdds::rtps::Locator_t&) override {
+    return true;
+  }
   eprosima::fastdds::rtps::Locator RemoteToMainLocal(
-      const eprosima::fastdds::rtps::Locator& remote) const override;
-  bool OpenOutputChannel(
-      eprosima::fastdds::rtps::SendResourceList& sender_resource_list,
-      const eprosima::fastdds::rtps::Locator&) override;
+      const eprosima::fastdds::rtps::Locator& remote) const override {
+    return remote;
+  }
+  bool OpenOutputChannel(eprosima::fastdds::rtps::SendResourceList&,
+                         const eprosima::fastdds::rtps::Locator&) override {
+    return true;
+  }
+
+  // 打开接收通道时记录 receiver 指针
   bool OpenInputChannel(
-      const eprosima::fastdds::rtps::Locator& locator,
+      const eprosima::fastdds::rtps::Locator&,
       eprosima::fastdds::rtps::TransportReceiverInterface* receiver,
       uint32_t) override;
-  bool CloseInputChannel(const eprosima::fastdds::rtps::Locator&) override;
+
+  bool CloseInputChannel(const eprosima::fastdds::rtps::Locator&) override {
+    return true;
+  }
   bool DoInputLocatorsMatch(
       const eprosima::fastdds::rtps::Locator&,
-      const eprosima::fastdds::rtps::Locator&) const override;
+      const eprosima::fastdds::rtps::Locator&) const override {
+    return true;
+  }
   eprosima::fastdds::rtps::LocatorList NormalizeLocator(
       const eprosima::fastdds::rtps::Locator& locator) override;
   void select_locators(
-      eprosima::fastdds::rtps::LocatorSelector& selector) const override;
+      eprosima::fastdds::rtps::LocatorSelector&) const override {}
   bool is_local_locator(
-      const eprosima::fastdds::rtps::Locator& locator) const override;
+      const eprosima::fastdds::rtps::Locator&) const override {
+    return false;
+  }
   eprosima::fastdds::rtps::TransportDescriptorInterface* get_configuration()
       override;
-  void AddDefaultOutputLocator(
-      eprosima::fastdds::rtps::LocatorList& defaultList) override;
+  void AddDefaultOutputLocator(eprosima::fastdds::rtps::LocatorList&) override {
+  }
   bool getDefaultMetatrafficMulticastLocators(
-      eprosima::fastdds::rtps::LocatorList& locators,
-      uint32_t metatraffic_multicast_port) const override;
+      eprosima::fastdds::rtps::LocatorList&, uint32_t) const override {
+    return false;
+  }
   bool getDefaultMetatrafficUnicastLocators(
-      eprosima::fastdds::rtps::LocatorList& locators,
-      uint32_t metatraffic_unicast_port) const override;
-  bool getDefaultUnicastLocators(eprosima::fastdds::rtps::LocatorList& locators,
-                                 uint32_t unicast_port) const override;
-  bool fillMetatrafficMulticastLocator(
-      eprosima::fastdds::rtps::Locator& locator,
-      uint32_t metatraffic_multicast_port) const override;
-  bool fillMetatrafficUnicastLocator(
-      eprosima::fastdds::rtps::Locator& locator,
-      uint32_t metatraffic_unicast_port) const override;
+      eprosima::fastdds::rtps::LocatorList&, uint32_t) const override {
+    return false;
+  }
+  bool getDefaultUnicastLocators(eprosima::fastdds::rtps::LocatorList&,
+                                 uint32_t) const override {
+    return false;
+  }
+  bool fillMetatrafficMulticastLocator(eprosima::fastdds::rtps::Locator&,
+                                       uint32_t) const override {
+    return false;
+  }
+  bool fillMetatrafficUnicastLocator(eprosima::fastdds::rtps::Locator&,
+                                     uint32_t) const override {
+    return false;
+  }
   bool configureInitialPeerLocator(
-      eprosima::fastdds::rtps::Locator& locator,
-      const eprosima::fastdds::rtps::PortParameters& port_params,
-      uint32_t domainId,
-      eprosima::fastdds::rtps::LocatorList& list) const override;
-  bool fillUnicastLocator(eprosima::fastdds::rtps::Locator& locator,
-                          uint32_t well_known_port) const override;
-  uint32_t max_recv_buffer_size() const override;
-
- private:
-  void worker_loop();
+      eprosima::fastdds::rtps::Locator&,
+      const eprosima::fastdds::rtps::PortParameters&, uint32_t,
+      eprosima::fastdds::rtps::LocatorList&) const override {
+    return false;
+  }
+  bool fillUnicastLocator(eprosima::fastdds::rtps::Locator&,
+                          uint32_t) const override {
+    return false;
+  }
+  uint32_t max_recv_buffer_size() const override { return max_message_size_; }
 
  private:
   uint32_t max_message_size_;
 
-  // incoming: Bridge -> worker thread -> RTPS
-  std::mutex mtx_in_;
-  std::condition_variable cv_in_;
-  std::queue<RawPacket> incoming_;
-
-  // outgoing: RTPS -> Bridge
+  // Outgoing queue (FastDDS -> Bridge)
   std::mutex mtx_out_;
   std::queue<RawPacket> outgoing_;
 
-  std::thread worker_;
-  std::atomic_bool running_{false};
-
-  // receiver_ 的访问需要同步保护
+  // Receiver callback (Bridge -> FastDDS)
   std::mutex mtx_receiver_;
   eprosima::fastdds::rtps::TransportReceiverInterface* receiver_{nullptr};
 
-  // keep pointer to our descriptor (owned by the user via shared_ptr)
+  // Optional callback to notify upper layer that outgoing data is available.
+  // WARNING: Fast DDS may call send() from its internal threads. Callbacks
+  // may therefore be invoked from DDS threads and MUST NOT call OMNeT++ API
+  // directly. Use them to set thread-safe flags only, or implement a safe
+  // notification mechanism.
+  std::function<void()> on_send_callback_ = nullptr;
+
   const CustomTransportDescriptor* descriptor_ = nullptr;
 };

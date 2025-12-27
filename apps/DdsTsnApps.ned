@@ -17,6 +17,12 @@ simple DdsTsnPublisherApp like IApp
         double stopTime @unit(s) = default(-1s);
         double sendInterval @unit(s) = default(1s);
         string message = default("Hello TSN DDS");
+        // Range or comma-separated list, e.g. "7400-7450,8000"
+        string discoveryPorts = default("7400-7450");
+        // If >0, scale DDS timeouts (heartbeat, lease, etc.) by this factor to
+        // tolerate simulation slowdowns. For example, set to 10 to make timers
+        // 10x more lenient. Default 1 = no scaling.
+        double qosScaleFactor = default(1.0);
         @display("i=block/app");
     gates:
         input socketIn;
@@ -28,6 +34,9 @@ simple DdsTsnSubscriberApp like IApp
     parameters:
         int localPort;
         double pollInterval @unit(s) = default(0.01s);
+        // If >0, scale DDS timeouts (heartbeat, lease, etc.) by this factor to
+        // tolerate simulation slowdowns. Default 1 = no scaling.
+        double qosScaleFactor = default(1.0);
         @display("i=block/app");
     gates:
         input socketIn;
