@@ -27,10 +27,23 @@ simple DdsTsnSubscriberApp like IApp
 {
     parameters:
         int localPort;
+        double pollInterval @unit(s) = default(0.01s);
         @display("i=block/app");
     gates:
         input socketIn;
         output socketOut;
+}
+
+simple FastDdsOmnetBridge
+{
+    parameters:
+        int localPort;
+        string peerAddress;
+        int peerPort;
+        double pollInterval @unit(s) = default(0.001s);
+    gates:
+        output socketOut;
+        input socketIn;
 }
 
 

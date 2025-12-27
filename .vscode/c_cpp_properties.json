@@ -4,8 +4,10 @@
             "name": "Mac",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${workspaceFolder}/../inet/src",
                 "/opt/fastdds/include",
-                "/usr/local/include"
+                "/usr/local/include",
+                "/Users/qiuyeyijian/burong/omnetpp/include"
             ],
             "defines": [],
             "macFrameworkPath": [
@@ -19,7 +21,9 @@
             "browse": {
                 "path": [
                     "${workspaceFolder}",
-                    "/opt/fastdds/include"
+                    "/opt/fastdds/include",
+                    "${workspaceFolder}/../inet/src",
+                    "/Users/qiuyeyijian/burong/omnetpp/include"
                 ],
                 "limitSymbolsToIncludedHeaders": true
             }

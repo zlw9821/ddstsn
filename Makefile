@@ -32,10 +32,12 @@ O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
 # Object files for local .cpp, .msg and .sm files
 OBJS = \
+    $O/src/CustomTransport.o \
     $O/src/DdsPublisherModule.o \
     $O/src/DdsSubscriberModule.o \
     $O/src/DdsTsnPublisherApp.o \
     $O/src/DdsTsnSubscriberApp.o \
+    $O/src/FastDdsOmnetBridge.o \
     $O/src/HelloWorldPubSubTypes.o \
     $O/src/HelloWorldTypeObjectSupport.o
 
