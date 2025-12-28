@@ -8,12 +8,12 @@ FASTDDS_HOME = /opt/fastdds
 
 # 2. 头文件包含路径
 # 使用 INCLUDES 或 INCLUDE_PATH（取决于 OMNeT++ 版本，建议同时加上以防万一）
-INCLUDES += -I$(FASTDDS_HOME)/include
-INCLUDE_PATH += -I$(FASTDDS_HOME)/include
+INCLUDES += -I$(FASTDDS_HOME)/include -I/usr/local/include
+INCLUDE_PATH += -I$(FASTDDS_HOME)/include -I/usr/local/include
 
 # 3. 库文件搜索路径
 # 告诉链接器去哪里找 .dylib 或 .so 文件
-LIBS += -L$(FASTDDS_HOME)/lib
+LIBS += -L$(FASTDDS_HOME)/lib -L/usr/local/lib
 
 # 4. 链接具体的库
 # 注意顺序：通常 fastdds 依赖 fastcdr 和 foonathan_memory

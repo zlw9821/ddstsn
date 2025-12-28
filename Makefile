@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for ddstsn
 #
 # This file was generated with the command:
-#  opp_makemake -f --deep -O out -KINET_PROJ=../inet -DINET_IMPORT -I/opt/fastdds/include -I. -I$$\(INET_PROJ\)/src -L$$\(INET_PROJ\)/src -lINET$$\(D\)
+#  opp_makemake -f --deep -O out -KINET_PROJ=../inet -DINET_IMPORT -I/opt/fastdds/include -I. -I/usr/local/include -I$$\(INET_PROJ\)/src -L$$\(INET_PROJ\)/src -lINET$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -17,7 +17,7 @@ USERIF_LIBS = $(ALL_ENV_LIBS) # that is, $(QTENV_LIBS) $(CMDENV_LIBS)
 #USERIF_LIBS = $(QTENV_LIBS)
 
 # C++ include paths (with -I)
-INCLUDE_PATH = -I/opt/fastdds/include -I. -I$(INET_PROJ)/src
+INCLUDE_PATH = -I/opt/fastdds/include -I. -I/usr/local/include -I$(INET_PROJ)/src
 
 # Additional object and library files to link with
 EXTRA_OBJS =
@@ -31,7 +31,7 @@ PROJECTRELATIVE_PATH =
 O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
 # Object files for local .cpp, .msg and .sm files
-OBJS = $O/src/CustomTransport.o $O/src/DdsTsnPublisherApp.o $O/src/DdsTsnSubscriberApp.o $O/src/HelloWorldPubSubTypes.o $O/src/HelloWorldTypeObjectSupport.o
+OBJS = $O/simulation/ddstsndemo/CustomTransport.o $O/simulation/ddstsndemo/DdsTsnPublisherApp.o $O/simulation/ddstsndemo/DdsTsnSubscriberApp.o $O/simulation/ddstsndemo/HelloWorldPubSubTypes.o $O/simulation/ddstsndemo/HelloWorldTypeObjectSupport.o
 
 # Message files
 MSGFILES =

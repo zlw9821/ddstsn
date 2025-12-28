@@ -22,6 +22,7 @@
                 "path": [
                     "${workspaceFolder}",
                     "/opt/fastdds/include",
+                    "/usr/local/include",
                     "${workspaceFolder}/../inet/src",
                     "/Users/qiuyeyijian/burong/omnetpp/include"
                 ],
