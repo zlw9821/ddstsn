@@ -10,8 +10,10 @@
 #include <fastdds/dds/publisher/Publisher.hpp>
 #include <fastdds/dds/publisher/qos/PublisherQos.hpp>
 #include <fastdds/rtps/transport/TransportInterface.hpp>
+#include <iomanip>
 #include <sstream>
 #include <thread>
+#include <unordered_map>
 
 #include "CustomTransport.hpp"
 #include "CustomTransportDescriptor.hpp"
@@ -19,8 +21,20 @@
 #include "inet/common/InitStages.h"
 #include "inet/common/packet/Packet.h"
 #include "inet/common/packet/chunk/BytesChunk.h"
+#include "inet/linklayer/common/VlanTag_m.h"  // used to request VLAN/PCP on egress
 #include "inet/networklayer/common/L3AddressResolver.h"
+#include "inet/queueing/common/LabelsTag_m.h"  // used to label packets with TSN stream
 #include "inet/transportlayer/contract/udp/UdpSocket.h"
+
+// helper to convert byte sequences to hex string
+static std::string bytes_to_hex(const uint8_t* data, size_t len) {
+  std::ostringstream ss;
+  ss.setf(std::ios::hex, std::ios::basefield);
+  ss.fill('0');
+  for (size_t i = 0; i < len; ++i)
+    ss << std::setw(2) << std::setfill('0') << static_cast<int>(data[i]);
+  return ss.str();
+}
 
 using namespace omnetpp;
 using namespace inet;
@@ -78,6 +92,8 @@ class DdsTsnPublisherApp : public cSimpleModule {
 
   // INET Socket
   UdpSocket socket;
+  // Socket dedicated to DDS discovery/meta-traffic
+  UdpSocket discoverySocket;
   L3Address destAddress;
   std::string destAddressStr;
   int destPort;
@@ -94,6 +110,27 @@ class DdsTsnPublisherApp : public cSimpleModule {
   // Transport 引用
   CustomTransport* transport_ = nullptr;
   std::shared_ptr<CustomTransportDescriptor> transportDesc_;
+
+  // Topic -> TSN stream mapping (configurable via parameter `topicToStream`)
+  std::unordered_map<std::string, std::string> topicToStreamMap_;
+  void parseTopicToStream(const std::string& s);
+
+  // Optional mapping: entity GUID (16-byte hex string) -> stream name
+  std::unordered_map<std::string, std::string> entityToStreamMap_;
+  void parseEntityToStream(const std::string& s);
+
+  // Optional mapping: stream name -> VLAN id (used to request VLAN tags)
+  std::unordered_map<std::string, int> streamToVlanMap_;
+  void parseStreamToVlan(const std::string& s);
+
+  // Cache: map from locator address bytes (16 bytes) to resolved L3Address to
+  // avoid repeated string parsing and name resolution during runtime which can
+  // significantly slow down simulation stepping.
+  std::unordered_map<std::string, L3Address> locatorCache_;
+
+  // Extract a writer GUID (12-byte prefix + 4-byte entityId) from RTPS packet
+  // using a heuristic scan for the GUID prefix; returns 16-byte hex string
+  static std::string extract_writer_guid_hex(const std::vector<uint8_t>& data);
 
   // 应用参数
   simtime_t startTime;
@@ -172,6 +209,29 @@ void DdsTsnPublisherApp::initialize(int stage) {
     // 创建 Custom Transport Descriptor
     transportDesc_ = std::make_shared<CustomTransportDescriptor>();
 
+    // Allow overriding the default transport max message size from NED/ini
+    // parameter `maxMessageSize`. This helps constrain DDS message sizes so
+    // that large messages aren't silently dropped at the link layer if INET's
+    // fragmentation is not enabled.
+    if (hasPar("maxMessageSize")) {
+      int mm = par("maxMessageSize");
+      if (mm > 0) {
+        transportDesc_->max_message_size_ = static_cast<uint32_t>(mm);
+        EV_INFO << "CustomTransport max_message_size set to " << mm
+                << " bytes from parameter maxMessageSize" << endl;
+      }
+    }
+
+    // Warn user when configured max message size exceeds typical Ethernet MTU
+    if (transportDesc_->max_message_size_ > 1500) {
+      EV_WARN << "CustomTransport::max_message_size ("
+              << transportDesc_->max_message_size_
+              << ") exceeds common Ethernet MTU (1500). Ensure INET's UDP "
+                 "fragmentation is enabled or set a smaller maxMessageSize; "
+                 "otherwise large DDS packets may be dropped by EthernetLink."
+              << endl;
+    }
+
     // 创建 DDS Participant
     DomainParticipantQos pqos;
     pqos.transport().use_builtin_transports = false;
@@ -212,6 +272,17 @@ void DdsTsnPublisherApp::initialize(int stage) {
       destAddress = resolver.resolve(destAddressStr.c_str());
     }
 
+    // Parse topic->stream mapping parameter if provided (format:
+    // "TopicA:streamA,TopicB:streamB")
+    if (hasPar("topicToStream"))
+      parseTopicToStream(par("topicToStream").stdstringValue());
+    // Parse optional entity->stream mapping (GUID hex -> stream)
+    if (hasPar("entityToStream"))
+      parseEntityToStream(par("entityToStream").stdstringValue());
+    // Parse optional stream->VLAN mapping (stream:VLAN)
+    if (hasPar("streamToVlan"))
+      parseStreamToVlan(par("streamToVlan").stdstringValue());
+
     // 注册类型、Topic、Writer (标准 DDS 流程)
     typeSupport.set_name("HelloWorld");
     participant_->register_type(TypeSupport(&typeSupport));
@@ -222,7 +293,26 @@ void DdsTsnPublisherApp::initialize(int stage) {
 
     // 设置 socket 输出门并绑定本地端口（此时协议注册与接口应已完成）
     socket.setOutputGate(gate("socketOut"));
-    if (localPort != -1) socket.bind(localPort);
+    if (localPort != -1) {
+      // Allow multiple sockets/apps on the same node to bind the same port
+      socket.setReuseAddress(true);
+      socket.bind(localPort);
+    }
+
+    // Bind a discovery socket so we can receive discovery/meta-traffic
+    discoverySocket.setOutputGate(gate("socketOut"));
+    // allow multiple sockets/apps on the same node to bind the discovery port
+    discoverySocket.setReuseAddress(true);
+    try {
+      discoverySocket.bind(default_discovery_port_);
+      // join RTPS multicast group
+      L3Address maddr = L3AddressResolver().resolve("239.255.0.1");
+      discoverySocket.joinMulticastGroup(maddr);
+    } catch (...) {
+      EV_WARN << "Failed to bind/join discovery socket; discovery packets may "
+                 "be dropped"
+              << endl;
+    }
 
     // Register transport-level callback to notify when DDS enqueues outgoing
     // data. Use a lightweight, thread-safe atomic flag; the sim thread's
@@ -255,15 +345,27 @@ void DdsTsnPublisherApp::handleMessage(cMessage* msg) {
     }
     if (active) scheduleAt(simTime() + txPollInterval, txPoller);
   } else if (msg == selfMsg) {
-    // 2. 生成业务数据
+    // 2. 生成业务数据 - only write when discovery/matching has occurred
     if (!active) return;
 
-    HelloWorld sample;
-    sample.index(++seq);
-    sample.message(messageStr);
-    writer_->write(&sample);
+    int matched = 0;
+    if (writer_) {
+      std::vector<InstanceHandle_t> subs;
+      ReturnCode_t rc = writer_->get_matched_subscriptions(subs);
+      if (rc == RETCODE_OK) matched = static_cast<int>(subs.size());
+    }
 
-    // EV_INFO << "DDS Written sample " << seq << endl;
+    if (matched > 0) {
+      HelloWorld sample;
+      sample.index(++seq);
+      sample.message(messageStr);
+      writer_->write(&sample);
+      // EV_INFO << "DDS Written sample " << seq << " (matched=" << matched <<
+      // ")" << endl;
+    } else {
+      EV_INFO << "Waiting for DDS discovery/matching (matched_subscriptions="
+              << matched << ") - will retry" << endl;
+    }
 
     if (stopTime < 0 || simTime() + sendInterval < stopTime)
       scheduleAt(simTime() + sendInterval, selfMsg);
@@ -296,6 +398,43 @@ void DdsTsnPublisherApp::processOutgoingPackets() {
     auto dataChunk = makeShared<BytesChunk>(pkt.data);
     packet->insertAtBack(dataChunk);
 
+    // If configured, attach a TSN stream label based on the Topic name of
+    // this publisher. Consumers (bridging/queueing modules) can map the
+    // stream label to PCP/queue selection. This is a safe, application-
+    // level tagging approach that doesn't mutate RTPS payloads.
+    // Attempt entity->stream mapping by heuristically extracting writer GUID
+    std::string streamName;
+    if (!entityToStreamMap_.empty()) {
+      std::string guidHex = extract_writer_guid_hex(pkt.data);
+      if (!guidHex.empty()) {
+        auto it = entityToStreamMap_.find(guidHex);
+        if (it != entityToStreamMap_.end()) streamName = it->second;
+      }
+    }
+
+    // Fallback: topic->stream mapping if available
+    if (streamName.empty() && topic_ && !topicToStreamMap_.empty()) {
+      auto it = topicToStreamMap_.find(std::string(topic_->get_name()));
+      if (it != topicToStreamMap_.end()) streamName = it->second;
+    }
+
+    if (!streamName.empty()) {
+      auto labels = packet->addTag<inet::LabelsTag>();
+      labels->appendLabels(streamName.c_str());
+      EV_INFO << "Tagged outgoing RTPS packet for topic '"
+              << (topic_ ? topic_->get_name() : "(unknown)")
+              << "' with stream='" << streamName << "'" << endl;
+      // If a VLAN mapping exists for this stream, attach a VlanReq tag so
+      // lower-layer modules can insert 802.1Q headers and set PCP as needed.
+      auto vIt = streamToVlanMap_.find(streamName);
+      if (vIt != streamToVlanMap_.end()) {
+        int vlanId = vIt->second;
+        packet->addTagIfAbsent<inet::VlanReq>()->setVlanId(vlanId);
+        EV_INFO << "Attached VlanReq vlanId=" << vlanId << " for stream='"
+                << streamName << "'" << endl;
+      }
+    }
+
     // Determine target port and address using DDS-provided locator when
     // available. Preserve discovery ports (e.g., 7400-7450) so that PDP/EDP
     // discovery traffic is not remapped to application ports.
@@ -308,14 +447,28 @@ void DdsTsnPublisherApp::processOutgoingPackets() {
     }
 
     // Try to extract an IP from locator and resolve it to L3Address when
-    // present
-    std::string ip = locator_to_ipstring(pkt.remote);
-    if (!ip.empty()) {
-      try {
-        L3AddressResolver resolver;
-        targetAddr = resolver.resolve(ip.c_str());
-      } catch (...) {
-        // if resolution fails, keep configured destAddress
+    // present. Use a small cache keyed by the raw 16-byte address so we avoid
+    // repeated string parsing and name resolution (which can significantly
+    // slow down simulation stepping when done very frequently).
+    std::string addrKey(reinterpret_cast<const char*>(pkt.remote.address), 16);
+    // If the address is all-zero, locator contains no address info
+    if (addrKey.find_first_not_of('\0') != std::string::npos) {
+      auto it = locatorCache_.find(addrKey);
+      if (it != locatorCache_.end()) {
+        targetAddr = it->second;
+      } else {
+        std::string ip = locator_to_ipstring(pkt.remote);
+        if (!ip.empty()) {
+          try {
+            L3AddressResolver resolver;
+            L3Address resolved = resolver.resolve(ip.c_str());
+            // Cache the resolved L3Address for this locator address bytes
+            locatorCache_.emplace(addrKey, resolved);
+            targetAddr = resolved;
+          } catch (...) {
+            // resolution failed; keep configured destAddress
+          }
+        }
       }
     }
 
@@ -432,6 +585,104 @@ void DdsTsnPublisherApp::parseDiscoveryPorts(const std::string& s) {
     discovery_port_ranges_.push_back({7400, 7400});
   }
   default_discovery_port_ = discovery_port_ranges_[0].first;
+}
+
+// Implementation: extract_writer_guid_hex
+std::string DdsTsnPublisherApp::extract_writer_guid_hex(
+    const std::vector<uint8_t>& data) {
+  if (data.size() < 20) return std::string();
+  const uint8_t* p = data.data();
+  const uint8_t* prefix = p + 8;  // GUID prefix offset in RTPS header
+  size_t sz = data.size();
+  for (size_t i = 20; i + 16 <= sz; ++i) {
+    if (std::memcmp(prefix, p + i, 12) == 0) {
+      const uint8_t* entity = p + i + 12;
+      return bytes_to_hex(prefix, 12) + bytes_to_hex(entity, 4);
+    }
+  }
+  return std::string();
+}
+
+// Parse mapping from topic names to TSN stream names of the form
+// "TopicA:streamA,TopicB:streamB". Values are stored in
+// topicToStreamMap_ used to label outgoing packets.
+void DdsTsnPublisherApp::parseTopicToStream(const std::string& s) {
+  topicToStreamMap_.clear();
+  std::stringstream ss(s);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    size_t colon = token.find(':');
+    if (colon == std::string::npos) continue;
+    std::string topic = token.substr(0, colon);
+    std::string stream = token.substr(colon + 1);
+    // trim
+    auto trim = [](std::string& x) {
+      size_t i = 0;
+      while (i < x.size() && std::isspace((unsigned char)x[i])) ++i;
+      if (i) x.erase(0, i);
+      size_t j = x.size();
+      while (j > 0 && std::isspace((unsigned char)x[j - 1])) --j;
+      if (j < x.size()) x.erase(j);
+    };
+    trim(topic);
+    trim(stream);
+    if (!topic.empty() && !stream.empty()) topicToStreamMap_[topic] = stream;
+  }
+}
+
+// Parse mapping from 16-byte GUID hex string to stream name, format:
+// "0123abcd...:streamA,deadbeef...:streamB"
+void DdsTsnPublisherApp::parseEntityToStream(const std::string& s) {
+  entityToStreamMap_.clear();
+  std::stringstream ss(s);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    size_t colon = token.find(':');
+    if (colon == std::string::npos) continue;
+    std::string guid = token.substr(0, colon);
+    std::string stream = token.substr(colon + 1);
+    auto trim = [](std::string& x) {
+      size_t i = 0;
+      while (i < x.size() && std::isspace((unsigned char)x[i])) ++i;
+      if (i) x.erase(0, i);
+      size_t j = x.size();
+      while (j > 0 && std::isspace((unsigned char)x[j - 1])) --j;
+      if (j < x.size()) x.erase(j);
+    };
+    trim(guid);
+    trim(stream);
+    if (!guid.empty() && !stream.empty()) entityToStreamMap_[guid] = stream;
+  }
+}
+
+// Parse mapping from stream name to VLAN id, format: "video:100,disc:10"
+void DdsTsnPublisherApp::parseStreamToVlan(const std::string& s) {
+  streamToVlanMap_.clear();
+  std::stringstream ss(s);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    size_t colon = token.find(':');
+    if (colon == std::string::npos) continue;
+    std::string stream = token.substr(0, colon);
+    std::string vlanStr = token.substr(colon + 1);
+    auto trim = [](std::string& x) {
+      size_t i = 0;
+      while (i < x.size() && std::isspace((unsigned char)x[i])) ++i;
+      if (i) x.erase(0, i);
+      size_t j = x.size();
+      while (j > 0 && std::isspace((unsigned char)x[j - 1])) --j;
+      if (j < x.size()) x.erase(j);
+    };
+    trim(stream);
+    trim(vlanStr);
+    if (!stream.empty() && !vlanStr.empty()) {
+      try {
+        int v = std::stoi(vlanStr);
+        streamToVlanMap_[stream] = v;
+      } catch (...) {
+      }
+    }
+  }
 }
 
 bool DdsTsnPublisherApp::isDiscoveryPort(int port) const {

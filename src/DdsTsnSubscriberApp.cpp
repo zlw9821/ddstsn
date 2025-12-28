@@ -7,6 +7,7 @@
 #include <fastdds/dds/subscriber/DataReaderListener.hpp>
 #include <fastdds/dds/subscriber/SampleInfo.hpp>
 #include <fastdds/dds/subscriber/Subscriber.hpp>
+#include <string>
 #include <thread>
 
 #include "CustomTransport.hpp"
@@ -15,6 +16,9 @@
 #include "inet/common/InitStages.h"
 #include "inet/common/packet/Packet.h"
 #include "inet/common/packet/chunk/BytesChunk.h"
+#include "inet/linklayer/common/VlanTag_m.h"
+#include "inet/networklayer/common/L3AddressResolver.h"
+#include "inet/queueing/common/LabelsTag_m.h"
 #include "inet/transportlayer/contract/udp/UdpSocket.h"
 
 using namespace omnetpp;
@@ -44,6 +48,8 @@ class DdsTsnSubscriberApp : public cSimpleModule {
 
   // INET Socket
   UdpSocket socket;
+  // Socket dedicated to DDS discovery/meta-traffic (e.g. RTPS/SPDP)
+  UdpSocket discoverySocket;
   int localPort_ = -1;
 
   // Event-driven notifier removed: use atomic flag + periodic polling
@@ -68,6 +74,8 @@ class DdsTsnSubscriberApp : public cSimpleModule {
 
   // 统计
   int samplesReceived = 0;
+  // Optional: log stream labels / VLANs seen on incoming packets for debugging
+  bool logStreamTags_ = false;
 
  protected:
   virtual int numInitStages() const override { return NUM_INIT_STAGES; }
@@ -89,6 +97,9 @@ void DdsTsnSubscriberApp::initialize(int stage) {
 
     // 读取本地端口参数（稍后在 APPLICATION_LAYER 设置 socket 输出门并 bind）
     localPort_ = par("localPort");  // [cite: 6]
+
+    // Optional: whether to log incoming stream labels/VLANs on packets
+    if (hasPar("logStreamTags")) logStreamTags_ = par("logStreamTags");
 
     // Read qosScaleFactor if provided (default 1.0 = no scaling)
     if (hasPar("qosScaleFactor")) qosScaleFactor_ = par("qosScaleFactor");
@@ -142,7 +153,38 @@ void DdsTsnSubscriberApp::initialize(int stage) {
 
     // 设置 socket 输出门并绑定本地端口（此时协议注册与接口应已完成）
     socket.setOutputGate(gate("socketOut"));
-    if (localPort_ != -1) socket.bind(localPort_);
+    if (localPort_ != -1) {
+      // Allow multiple sockets/apps on the same node to bind the same port
+      socket.setReuseAddress(true);
+      socket.bind(localPort_);
+    }
+
+    // Setup discovery socket to receive RTPS discovery/meta-traffic
+    const int discoveryPort = 7400;
+    discoverySocket.setOutputGate(gate("socketOut"));
+    // allow multiple sockets/apps on the same node to bind the discovery port
+    discoverySocket.setReuseAddress(true);
+    // bind discovery port so discovery packets (unicast) are delivered
+    try {
+      discoverySocket.bind(discoveryPort);
+    } catch (cRuntimeError& e) {
+      EV_WARN << "discoverySocket.bind(" << discoveryPort
+              << ") failed: " << e.what()
+              << "; discovery socket not bound (another module may own port)"
+              << endl;
+    } catch (...) {
+      EV_WARN << "discoverySocket.bind(" << discoveryPort
+              << ") failed with unknown error; discovery socket not bound"
+              << endl;
+    }
+    // attempt to join the default RTPS multicast group so multicast discovery
+    // packets are received as well (may still succeed without explicit bind)
+    try {
+      L3Address maddr = L3AddressResolver().resolve("239.255.0.1");
+      discoverySocket.joinMulticastGroup(maddr);
+    } catch (...) {
+      EV_WARN << "Failed to join RTPS multicast group; continuing" << endl;
+    }
 
     // Use periodic poll timer to check for new DDS samples driven by the
     // atomic pendingIncoming_ flag
@@ -175,6 +217,23 @@ void DdsTsnSubscriberApp::handleMessage(cMessage* msg) {
       delete msg;
       return;
     }
+
+    if (logStreamTags_) {
+      auto labels = packet->findTag<inet::LabelsTag>();
+      if (labels) {
+        std::string s;
+        int n = labels->getLabelsArraySize();
+        for (int i = 0; i < n; ++i) {
+          if (i) s += ",";
+          s += labels->getLabels(i);
+        }
+        EV_INFO << "[DDS-SUB] Received streams=" << s << endl;
+      }
+      if (auto vlanInd = packet->findTag<inet::VlanInd>()) {
+        EV_INFO << "[DDS-SUB] Received vlan=" << vlanInd->getVlanId() << endl;
+      }
+    }
+
     auto chunk = packet->peekDataAsBytes();
 
     RawPacket rawPkt;

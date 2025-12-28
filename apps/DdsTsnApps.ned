@@ -19,6 +19,10 @@ simple DdsTsnPublisherApp like IApp
         string message = default("Hello TSN DDS");
         // Range or comma-separated list, e.g. "7400-7450,8000"
         string discoveryPorts = default("7400-7450");
+        // Max DDS message size (bytes). If set > network MTU and fragmentation
+        // is not enabled in INET's UDP layer, packets may be dropped by
+        // lower layers. Default -1 = use transport descriptor default.
+        int maxMessageSize = default(-1);
         // If >0, scale DDS timeouts (heartbeat, lease, etc.) by this factor to
         // tolerate simulation slowdowns. For example, set to 10 to make timers
         // 10x more lenient. Default 1 = no scaling.
@@ -37,6 +41,8 @@ simple DdsTsnSubscriberApp like IApp
         // If >0, scale DDS timeouts (heartbeat, lease, etc.) by this factor to
         // tolerate simulation slowdowns. Default 1 = no scaling.
         double qosScaleFactor = default(1.0);
+        // Optional: if true, log INET LabelsTag / VLAN info from incoming packets
+        bool logStreamTags = default(true);
         @display("i=block/app");
     gates:
         input socketIn;

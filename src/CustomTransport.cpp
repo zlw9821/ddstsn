@@ -1,8 +1,12 @@
 #include "CustomTransport.hpp"
 
+#include <omnetpp.h>
+
 #include <cstring>
 
 #include "CustomTransportDescriptor.hpp"
+
+using namespace omnetpp;
 
 using namespace eprosima::fastdds::rtps;
 
@@ -17,7 +21,15 @@ bool CustomTransport::send(eprosima::fastdds::rtps::Locator_t* /*locators*/,
                            const uint8_t* buffer, uint32_t size,
                            eprosima::fastdds::rtps::Locator_t* remote_locator) {
   // DDS 调用此函数发送数据
-  if (size > max_message_size_) return false;
+  if (size > max_message_size_) {
+    EV_WARN
+        << "CustomTransport::send - outgoing message size " << size
+        << " exceeds max_message_size_ " << max_message_size_
+        << ", dropping send. Consider lowering DDS MaxMessageSize "
+           "or enabling UDP fragmentation in INET (udp.fragmentation= true)."
+        << endl;
+    return false;
+  }
 
   RawPacket pkt;
   pkt.data.assign(buffer, buffer + size);
