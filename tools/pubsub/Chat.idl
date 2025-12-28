@@ -1,0 +1,6 @@
+// Chat.idl
+struct ChatMessage
+{
+    unsigned long user_id;
+    string message;
+};
