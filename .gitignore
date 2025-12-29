@@ -2,3 +2,6 @@ out
 ddstsn
 results
 ddstsn_dbg
+inet/
+build/
+dds/.cache/

@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for ddstsn
 #
 # This file was generated with the command:
-#  opp_makemake -f --deep -O out -KINET_PROJ=../inet -DINET_IMPORT -I/opt/fastdds/include -I. -I/usr/local/include -I$$\(INET_PROJ\)/src -L$$\(INET_PROJ\)/src -lINET$$\(D\)
+#  opp_makemake -f --deep -O out -KINET_PROJ=../../inet -DINET_IMPORT -I/opt/fastdds/include -I. -I/usr/local/include -I$$\(INET_PROJ\)/src -L$$\(INET_PROJ\)/src -lINET$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -30,8 +30,8 @@ PROJECT_OUTPUT_DIR = out
 PROJECTRELATIVE_PATH =
 O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
-# Object files for local .cpp, .msg and .sm files
-OBJS = $O/simulation/ddstsndemo/CustomTransport.o $O/simulation/ddstsndemo/DdsTsnPublisherApp.o $O/simulation/ddstsndemo/DdsTsnSubscriberApp.o $O/simulation/ddstsndemo/HelloWorldPubSubTypes.o $O/simulation/ddstsndemo/HelloWorldTypeObjectSupport.o
+# Object files for local .cc, .msg and .sm files
+OBJS =
 
 # Message files
 MSGFILES =
@@ -40,7 +40,7 @@ MSGFILES =
 SMFILES =
 
 # Other makefile variables (-K)
-INET_PROJ=../inet
+INET_PROJ=../../inet
 
 #------------------------------------------------------------------------------
 
@@ -104,20 +104,20 @@ $O/$(TARGET): $(OBJS)  $(wildcard $(EXTRA_OBJS)) Makefile $(CONFIGFILE)
 
 # disabling all implicit rules
 .SUFFIXES :
-.PRECIOUS : %_m.h %_m.cpp
+.PRECIOUS : %_m.h %_m.cc
 
-$O/%.o: %.cpp $(COPTS_FILE) | msgheaders smheaders
+$O/%.o: %.cc $(COPTS_FILE) | msgheaders smheaders
 	@$(MKPATH) $(dir $@)
 	$(qecho) "$<"
 	$(Q)$(CXX) -c $(CXXFLAGS) $(COPTS) -o $@ $<
 
-%_m.cpp %_m.h: %.msg
+%_m.cc %_m.h: %.msg
 	$(qecho) MSGC: $<
-	$(Q)$(MSGC) -s _m.cpp -MD -MP -MF $O/$(basename $<)_m.h.d $(MSGCOPTS) $<
+	$(Q)$(MSGC) -s _m.cc -MD -MP -MF $O/$(basename $<)_m.h.d $(MSGCOPTS) $<
 
-%_sm.cpp %_sm.h: %.sm
+%_sm.cc %_sm.h: %.sm
 	$(qecho) SMC: $<
-	$(Q)$(SMC) -c++ -suffix cpp $(SMCOPTS) $<
+	$(Q)$(SMC) -c++ -suffix cc $(SMCOPTS) $<
 
 msgheaders: $(MSGFILES:.msg=_m.h)
 
@@ -127,7 +127,7 @@ clean:
 	$(qecho) Cleaning $(TARGET)
 	$(Q)-rm -rf $O
 	$(Q)-rm -f $(TARGET_FILES)
-	$(Q)-rm -f $(call opp_rwildcard, . , *_m.cpp *_m.h *_sm.cpp *_sm.h)
+	$(Q)-rm -f $(call opp_rwildcard, . , *_m.cc *_m.h *_sm.cc *_sm.h)
 
 cleanall:
 	$(Q)$(CLEANALL_COMMAND)

@@ -17,7 +17,7 @@ LIBS += -L$(FASTDDS_HOME)/lib -L/usr/local/lib
 
 # 4. 链接具体的库
 # 注意顺序：通常 fastdds 依赖 fastcdr 和 foonathan_memory
-LIBS += -lfastdds -lfastcdr -lfoonathan_memory
+LIBS += -lfastdds -lfastcdr -lfoonathan_memory-0.7.3
 
 # 5. 运行时路径 (RPATH) - 关键步骤
 # 解决 "library not loaded" 运行时错误。

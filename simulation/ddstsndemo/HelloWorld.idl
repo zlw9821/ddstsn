@@ -1,4 +1,0 @@
-struct HelloWorld {
-    long index;
-    string<256> message;
-};
