@@ -78,6 +78,9 @@ done
 ip netns exec ns_pub ethtool -K veth_pub_ns tx off rx off 2>/dev/null || true
 ip netns exec ns_sub ethtool -K veth_sub_ns tx off rx off 2>/dev/null || true
 
+echo 0 > /sys/devices/virtual/net/br_pub/bridge/multicast_snooping 
+echo 0 > /sys/devices/virtual/net/br_sub/bridge/multicast_snooping
+
 echo "=== 部署完成 ==="
 echo "-------------------------------------------------------"
 echo "逻辑架构:"

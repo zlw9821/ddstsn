@@ -1,37 +1,35 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
-    <profiles>
-        <participant profile_name="pub_participant" is_default_profile="true">
-            <rtps>
-                <defaultUnicastLocatorList>
-                    <locator>
-                        <udpv4>
-                            <address>192.168.2.20</address>
-                        </udpv4>
-                    </locator>
-                </defaultUnicastLocatorList>
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 
-                <builtin>
-                    <initialPeersList>
-                        <locator>
-                            <udpv4>
-                                <address>192.168.2.21</address>
-                            </udpv4>
-                        </locator>
-                    </initialPeersList>
-                </builtin>
+  <participant profile_name="pub_participant" is_default_profile="true">
+    <domainId>0</domainId>
 
-                <userTransports>
-                    <transport_id>veth_transport</transport_id>
-                    <type>UDPv4</type>
-                    <interfaceWhiteList>
-                        <address>192.168.2.20</address>
-                    </interfaceWhiteList>
-                </userTransports>
+    <rtps>
+      <name>publisher_node</name>
 
-                <useBuiltinTransports>false</useBuiltinTransports>
+      <builtin>
+        <metatrafficMulticastLocatorList>
+          <locator>
+            <udpv4>
+              <address>239.255.0.1</address>
+              <port>7400</port>
+            </udpv4>
+          </locator>
+        </metatrafficMulticastLocatorList>
 
-            </rtps>
-        </participant>
-    </profiles>
-</dds>
+        <avoid_builtin_multicast>false</avoid_builtin_multicast>
+      </builtin>
+
+      <defaultMulticastLocatorList>
+        <locator>
+          <udpv4>
+            <address>239.255.0.1</address>
+            <port>7412</port>
+          </udpv4>
+        </locator>
+      </defaultMulticastLocatorList>
+
+    </rtps>
+  </participant>
+
+</profiles>

@@ -1,4 +1,3 @@
-// ChatSubscriber.cpp
 #include "ChatPubSubTypes.hpp"
 
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
@@ -13,18 +12,23 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <atomic>
+#include <csignal>
 
 using namespace eprosima::fastdds::dds;
 
-// 监听器类：回调函数在这里触发
+static std::atomic_bool running{true};
+
+void signal_handler(int) { running = false; }
+
+// 数据监听器类
 class MyListener : public DataReaderListener {
 public:
     void on_data_available(DataReader* reader) override {
         ChatMessage data;
         SampleInfo info;
 
-        // 取出数据
-        while (reader->take_next_sample(&data, &info) == eprosima::fastdds::dds::RETCODE_OK) {
+        while (reader->take_next_sample(&data, &info) == RETCODE_OK) {
             if (info.valid_data) {
                 std::cout << "[Received] User " << data.user_id() 
                           << ": " << data.message() << std::endl;
@@ -34,7 +38,7 @@ public:
 
     void on_subscription_matched(DataReader* reader, const SubscriptionMatchedStatus& info) override {
         if (info.current_count_change == 1) {
-            std::cout << ">> Match Found: Publisher connected!" << std::endl;
+            std::cout << ">> Match Found: Publisher connected via Unicast!" << std::endl;
         } else if (info.current_count_change == -1) {
             std::cout << ">> Match Lost: Publisher disconnected." << std::endl;
         }
@@ -42,8 +46,26 @@ public:
 };
 
 int main() {
-    // 1. 创建 Participant
-    DomainParticipant* participant = DomainParticipantFactory::get_instance()->create_participant(0, PARTICIPANT_QOS_DEFAULT);
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    if (DomainParticipantFactory::get_instance()->load_XML_profiles_file(
+    "sub.xml"
+) != RETCODE_OK)
+    {
+        std::cerr << "error: can not load sub.xml" << std::endl;
+        return 1;
+    }
+
+    // 1. 使用 XML 中的 profile 创建 Participant
+    // 名称需对应 sub.xml 中的 sub_participant
+    DomainParticipant* participant = 
+        DomainParticipantFactory::get_instance()->create_participant_with_profile(0, "sub_participant");
+
+    if (!participant) {
+        std::cerr << "Failed to create DomainParticipant using profile" << std::endl;
+        return 1;
+    }
 
     // 2. 注册类型
     TypeSupport type(new ChatMessagePubSubType());
@@ -55,18 +77,28 @@ int main() {
     // 4. 创建 Subscriber
     Subscriber* subscriber = participant->create_subscriber(SUBSCRIBER_QOS_DEFAULT);
 
-    // 5. 创建 DataReader 并绑定 Listener
+    // 5. 创建 DataReader 并配置 QoS 与发布端匹配
+    DataReaderQos reader_qos;
+    subscriber->get_default_datareader_qos(reader_qos);
+    reader_qos.reliability().kind = RELIABLE_RELIABILITY_QOS; // 必须匹配发布端
+    
     MyListener listener;
-    // 注意：这里需要传入 Listener 指针，并掩码设置我们要监听所有状态
-    DataReader* reader = subscriber->create_datareader(topic, DATAREADER_QOS_DEFAULT, &listener);
+    DataReader* reader = subscriber->create_datareader(topic, reader_qos, &listener);
 
-    std::cout << "Waiting for messages... (Press Ctrl+C to stop)" << std::endl;
-
-    // 阻塞主线程，否则 main 结束程序就退出了
-    while(true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (!reader) {
+        std::cerr << "Failed to create DataReader" << std::endl;
+        return 1;
     }
+
+    std::cout << "Subscriber running. Waiting for Unicast messages..." << std::endl;
+
+    while(running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    // 6. 清理
+    participant->delete_contained_entities();
+    DomainParticipantFactory::get_instance()->delete_participant(participant);
 
     return 0;
 }
-

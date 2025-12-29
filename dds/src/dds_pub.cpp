@@ -27,26 +27,33 @@ int main()
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    // -------------------------------------------------
-    // 1. Participant
-    // -------------------------------------------------
-    DomainParticipantQos participant_qos;
-    participant_qos.name("ChatPublisherParticipant");
-
-    DomainParticipant* participant =
-        DomainParticipantFactory::get_instance()->create_participant(0, participant_qos);
-
-    if (!participant)
+    // 1. 手动加载 XML 配置文件
+    // load_profiles 会返回 ReturnCode_t，成功为 RETCODE_OK
+    if (DomainParticipantFactory::get_instance()->load_XML_profiles_file(
+    "pub.xml"
+) != RETCODE_OK)
     {
-        std::cerr << "Failed to create DomainParticipant" << std::endl;
+        std::cerr << "error: can not load pub.xml" << std::endl;
         return 1;
     }
 
     // -------------------------------------------------
-    // 2. Register type
+    // 1. 使用 XML 中的 profile 创建 Participant 
+    // -------------------------------------------------
+    // 这里使用 create_participant_with_profile，名称必须与 pub.xml 中的 profile_name 一致
+    DomainParticipant* participant =
+        DomainParticipantFactory::get_instance()->create_participant_with_profile(0, "pub_participant");
+
+    if (!participant)
+    {
+        std::cerr << "Failed to create DomainParticipant using profile" << std::endl;
+        return 1;
+    }
+
+    // -------------------------------------------------
+    // 2. 注册类型 
     // -------------------------------------------------
     TypeSupport type(new ChatMessagePubSubType());
-
     if (type.register_type(participant) != 0)
     {
         std::cerr << "Failed to register type" << std::endl;
@@ -54,7 +61,7 @@ int main()
     }
 
     // -------------------------------------------------
-    // 3. Topic
+    // 3. 创建 Topic 
     // -------------------------------------------------
     Topic* topic =
         participant->create_topic(
@@ -69,7 +76,7 @@ int main()
     }
 
     // -------------------------------------------------
-    // 4. Publisher
+    // 4. 创建 Publisher 
     // -------------------------------------------------
     Publisher* publisher =
         participant->create_publisher(PUBLISHER_QOS_DEFAULT);
@@ -81,16 +88,15 @@ int main()
     }
 
     // -------------------------------------------------
-    // 5. DataWriter QoS (TSN-friendly)
+    // 5. 创建 DataWriter 
     // -------------------------------------------------
     DataWriterQos writer_qos;
     publisher->get_default_datawriter_qos(writer_qos);
-
+    
+    // 设置可靠传输和持久性（可选，建议与 Sub 端一致）
     writer_qos.reliability().kind = RELIABLE_RELIABILITY_QOS;
     writer_qos.history().kind     = KEEP_LAST_HISTORY_QOS;
-    writer_qos.history().depth    = 1;
-
-    writer_qos.publish_mode().kind = ASYNCHRONOUS_PUBLISH_MODE;
+    writer_qos.history().depth    = 10;
 
     DataWriter* writer =
         publisher->create_datawriter(topic, writer_qos);
@@ -102,25 +108,24 @@ int main()
     }
 
     // -------------------------------------------------
-    // 6. Publish loop
+    // 6. 发送循环 
     // -------------------------------------------------
     ChatMessage data;
     data.user_id(101);
-
     int count = 0;
+
+    std::cout << "Publisher running. Sending messages via Unicast..." << std::endl;
 
     while (running)
     {
         data.message("Hello FastDDS " + std::to_string(count++));
-
         writer->write(&data);
         std::cout << "[Sent] " << data.message() << std::endl;
-
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     // -------------------------------------------------
-    // 7. Cleanup
+    // 7. 清理 
     // -------------------------------------------------
     participant->delete_contained_entities();
     DomainParticipantFactory::get_instance()->delete_participant(participant);

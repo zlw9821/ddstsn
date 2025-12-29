@@ -1,37 +1,38 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
-  <profiles>
-    <participant profile_name="sub_participant" is_default_profile="true">
-      <rtps>
-        <defaultUnicastLocatorList>
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+
+  <participant profile_name="sub_participant" is_default_profile="true">
+    <domainId>0</domainId>
+
+    <rtps>
+      <name>subscriber_node</name>
+
+      <!-- 允许 builtin（要用组播 discovery）: 不要设置 useBuiltinTransports=false -->
+      <builtin>
+        <!-- 使用组播做元流 discovery（SPDP/PDP）-->
+        <metatrafficMulticastLocatorList>
           <locator>
             <udpv4>
-              <address>192.168.2.21</address>
+              <address>239.255.0.1</address>
+              <port>7400</port>
             </udpv4>
           </locator>
-        </defaultUnicastLocatorList>
+        </metatrafficMulticastLocatorList>
+        <!-- 确保不主动禁止 builtin 的 multicast -->
+        <avoid_builtin_multicast>false</avoid_builtin_multicast>
+      </builtin>
 
-        <builtin>
-          <initialPeersList>
-            <locator>
-              <udpv4>
-                <address>192.168.2.20</address>
-              </udpv4>
-            </locator>
-          </initialPeersList>
-        </builtin>
+      <!-- 接收用户数据的 multicast locator（可与 metatraffic 相同或不同） -->
+      <defaultMulticastLocatorList>
+        <locator>
+          <udpv4>
+            <address>239.255.0.1</address>
+            <port>7412</port>
+          </udpv4>
+        </locator>
+      </defaultMulticastLocatorList>
 
-        <userTransports>
-          <transport_id>veth_transport_sub</transport_id>
-          <type>UDPv4</type>
-          <interfaceWhiteList>
-            <address>192.168.2.21</address>
-          </interfaceWhiteList>
-        </userTransports>
+    </rtps>
+  </participant>
 
-        <useBuiltinTransports>false</useBuiltinTransports>
-
-      </rtps>
-    </participant>
-  </profiles>
-</dds>
+</profiles>
