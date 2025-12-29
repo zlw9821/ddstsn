@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <participant profile_name="pub_participant" is_default_profile="true">
+            <rtps>
+                <defaultUnicastLocatorList>
+                    <locator>
+                        <udpv4>
+                            <address>192.168.2.20</address>
+                        </udpv4>
+                    </locator>
+                </defaultUnicastLocatorList>
+
+                <builtin>
+                    <initialPeersList>
+                        <locator>
+                            <udpv4>
+                                <address>192.168.2.21</address>
+                            </udpv4>
+                        </locator>
+                    </initialPeersList>
+                </builtin>
+
+                <userTransports>
+                    <transport_id>veth_transport</transport_id>
+                    <type>UDPv4</type>
+                    <interfaceWhiteList>
+                        <address>192.168.2.20</address>
+                    </interfaceWhiteList>
+                </userTransports>
+
+                <useBuiltinTransports>false</useBuiltinTransports>
+
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

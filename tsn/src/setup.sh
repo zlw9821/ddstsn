@@ -13,3 +13,6 @@ sudo ip link set dev tapb up
 
 sudo ip netns exec ns_pub ethtool -K tapa tx off rx off
 sudo ip netns exec ns_sub ethtool -K tapb tx off rx off
+
+echo 0 > /sys/devices/virtual/net/br_pub/bridge/multicast_snooping 
+echo 0 > /sys/devices/virtual/net/br_sub/bridge/multicast_snooping
