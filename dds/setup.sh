@@ -81,6 +81,9 @@ ip netns exec ns_sub ethtool -K veth_sub_ns tx off rx off 2>/dev/null || true
 echo 0 > /sys/devices/virtual/net/br_pub/bridge/multicast_snooping 
 echo 0 > /sys/devices/virtual/net/br_sub/bridge/multicast_snooping
 
+ip netns exec ns_pub ip route add 239.0.0.0/8 dev veth_pub_ns
+ip netns exec ns_sub ip route add 239.0.0.0/8 dev veth_sub_ns
+
 echo "=== 部署完成 ==="
 echo "-------------------------------------------------------"
 echo "逻辑架构:"
