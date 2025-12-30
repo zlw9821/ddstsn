@@ -20,7 +20,7 @@ network DdsTsnNetwork extends TsnNetworkBase
         host1: TsnDevice {
             parameters:
                 @display("p=200,200;i=device/pc");
-                numEthInterfaces = 2;  // eth[0]=TAP, eth[1]=TSN链路
+                numEthInterfaces = 1;  // eth[0]=TAP, eth[1]=TSN链路
         }
 
         // TSN 交换机
@@ -34,13 +34,13 @@ network DdsTsnNetwork extends TsnNetworkBase
         host2: TsnDevice {
             parameters:
                 @display("p=600,200;i=device/pc");
-                numEthInterfaces = 2;  // eth[0]=TAP, eth[1]=TSN链路
+                numEthInterfaces = 1;  // eth[0]=TAP, eth[1]=TSN链路
         }
 
     connections allowunconnected:
         // TSN 骨干链路 (100 Mbps 全双工)
         // eth[0] 保留给外部 TAP 设备
         // eth[1] 用于 TSN 网络互联
-        host1.ethg[1] <--> Eth100M <--> switch1.ethg[0];
-        host2.ethg[1] <--> Eth100M <--> switch1.ethg[1];
+        host1.ethg[0] <--> Eth100M <--> switch1.ethg[0]; 
+        host2.ethg[0] <--> Eth100M <--> switch1.ethg[1];
 }
